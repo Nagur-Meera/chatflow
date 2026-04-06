@@ -33,6 +33,14 @@ async function bootstrap() {
   app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
   app.use(express.json());
 
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'chatflow-api',
+      status: 'ok',
+      health: '/health',
+    });
+  });
+
   app.get('/health', (req, res) => {
     res.json({ ok: true });
   });
