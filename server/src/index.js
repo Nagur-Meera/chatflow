@@ -13,16 +13,50 @@ const messageRoutes = require('./routes/messages');
 const usersRoutes = require('./routes/users');
 
 const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
+function normalizeOrigin(rawOrigin) {
+  const trimmed = String(rawOrigin || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return [];
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return [trimmed];
+  }
+
+  // Allow env values like "chatflow-five-omega.vercel.app".
+  return [`https://${trimmed}`, `http://${trimmed}`];
+}
+
+function getAllowedOrigins() {
+  const raw = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+  const entries = raw.split(',').flatMap((origin) => normalizeOrigin(origin));
+  return [...new Set(entries)];
+}
 
 async function bootstrap() {
   await connectDatabase(process.env.MONGO_URI);
+
+  const allowedOrigins = getAllowedOrigins();
+
+  const validateOrigin = (requestOrigin, callback) => {
+    if (!requestOrigin) {
+      // Allow non-browser clients and same-origin server-to-server calls.
+      return callback(null, true);
+    }
+
+    const normalizedRequestOrigin = requestOrigin.replace(/\/+$/, '');
+
+    if (allowedOrigins.includes(normalizedRequestOrigin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${requestOrigin}`));
+  };
 
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: CLIENT_ORIGIN,
+      origin: validateOrigin,
       methods: ['GET', 'POST', 'PATCH', 'DELETE'],
       credentials: true,
     },
@@ -30,7 +64,12 @@ async function bootstrap() {
 
   app.set('io', io);
 
-  app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+  app.use(
+    cors({
+      origin: validateOrigin,
+      credentials: true,
+    })
+  );
   app.use(express.json());
 
   app.get('/', (req, res) => {
